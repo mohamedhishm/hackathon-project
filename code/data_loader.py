@@ -96,9 +96,6 @@ class ImageRecord:
     user_id: str
     request_id: str | None
     related_event_id: str | None
-    # Path resolved from files under <data_dir>/media/images/<image_id>.*
-    # No OCR/captioning. Extension comes from the on-disk file, not a hardcoded suffix.
-    image_path: Path
     exists: bool
 
 
@@ -460,14 +457,12 @@ def _image_from_row(
 ) -> ImageRecord:
     image_id = _parse_str(_cell(row, "image_id"))
     assert image_id is not None
-    image_path = files_by_id.get(image_id, media_dir / image_id)
     return ImageRecord(
         image_id=image_id,
         user_id=_parse_str(_cell(row, "user_id")),  # type: ignore[arg-type]
         request_id=_parse_str(_cell(row, "request_id"), required=False),
         related_event_id=_parse_str(_cell(row, "related_event_id"), required=False),
-        image_path=image_path,
-        exists=image_id in files_by_id and image_path.is_file(),
+        exists=image_id in files_by_id,
     )
 
 
@@ -760,7 +755,7 @@ if __name__ == "__main__":
     print(f"n requests: {len(data.requests_by_id)}")
     print(f"n sample requests: {len(data.sample_requests_by_id)}")
 
-    example_user_id = next(iter(data.profiles_by_user))
+    example_user_id = "user_01"
     user_bundle = data.get_user_data(example_user_id)
     print(
         "user lookup:",
@@ -791,12 +786,4 @@ if __name__ == "__main__":
     print(
         "events_by_user count:",
         len(data.events_by_user[data.requests_by_id[example_request_id].user_id]),
-    )
-    example_image = next(iter(data.images_by_id.values()))
-    print(
-        "image path:",
-        example_image.image_id,
-        example_image.image_path.name,
-        "exists=",
-        example_image.exists,
     )
