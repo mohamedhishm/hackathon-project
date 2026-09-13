@@ -2,17 +2,19 @@
 
 ## Executive Summary
 - **Evaluation Dataset**: 250 evaluation requests
-- **Execution Mode**: Deterministic Financial Simulation Engine (Zero API LLM cost during evaluation)
-- **Model Providers & Names**: Deterministic Hybrid Rules & Constraint Solver
+- **Execution Mode**: Deterministic rules plus optional local OCR adapter
+- **Model Providers & Names**: None; no external LLM/API calls were made
 - **Total Model Calls**: 0
 - **Input Tokens**: 0
 - **Output Tokens**: 0
 - **Total Cost**: $0.00
-- **Execution Time**: 10.38 seconds (0.0415s / request)
+- **Execution Time**: 19.41 seconds (0.0776s / request)
 
 ## Compliance Invariants Verified
 - Fixed Simulation Anchor ($D_0 = \text{request.request\_date}$)
 - Strict Recurrence Detection (cadence & variance validated)
 - Decoupled Evidence Reconciliation (non-mutating LoadedData)
-- Independent Downstream Plan Validator Gate (100% passes)
+- Independent Downstream Plan Validator Gate (rejections=0)
 - Output CSV Columns Exact Match
+- Unresolved blank-amount image events: 11
+- Per-request failures: 0

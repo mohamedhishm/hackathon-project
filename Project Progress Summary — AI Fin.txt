@@ -1,0 +1,723 @@
+# Project Progress Summary — AI Financial Agent
+
+I am building an AI Financial Agent for the HackerRank Orchestrate September 2026 event.
+
+The project is a financial decision system where the user can make a request such as buying something, and the system determines what is financially safe based on the user's financial profile, financial events, payment options, and a 90-day cash-flow simulation.
+
+I am a beginner in AI Agents, so I want to understand the architecture and code deeply, not just copy code. For every step, I want to understand:
+- What we are building
+- Why we need it
+- Why we chose this approach
+- What each important line of code means
+- What alternatives exist
+- Common mistakes
+- Possible AI interview questions
+
+The core design principle is:
+
+**"Let the LLM describe, let deterministic code decide."**
+
+The LLM is responsible for understanding natural language and extracting facts. It must NOT perform financial calculations or make financial decisions.
+
+The deterministic Python code is responsible for calculations, simulation, affordability, payment plans, ranking, and final decisions.
+
+---
+
+# Overall Project Phases
+
+1. Understand the dataset + build `data_loader.py` — DONE
+2. Design `schemas.py` — DONE
+3. Build LLM extraction layer — DONE
+4. Build the 90-day financial simulator — DONE
+5. Build plan generation + ranking — NEXT
+6. Build validator
+7. Run the 25 public samples and measure performance
+8. Run the 250 production requests
+9. Token usage + `code.zip` + `log.txt` + AI Judge preparation
+
+I have completed through **Phase 4**.
+
+---
+
+# Phase 1 — Understand the Dataset + Build `data_loader.py`
+
+## Goal
+
+The first phase was to fully understand the dataset and create a clean data-loading layer.
+
+The loader is responsible for:
+- Reading the CSV files
+- Parsing dates and numeric values
+- Preserving missing values
+- Converting raw rows into structured Python objects
+- Building indexes for fast access
+- Validating references between datasets
+- Loading image metadata
+
+The loader does **not** contain financial decision logic.
+
+## Main dataset files
+
+### `requests.csv`
+
+Contains the user's request:
+- `request_id`
+- `user_id`
+- `request_date`
+- `request_type`
+- `requested_amount`
+- `desired_completion_date`
+- `allows_partial_payment`
+- `request_text`
+
+### `sample_requests.csv`
+
+Contains sample requests plus reference/label fields used for evaluation.
+
+Important:
+The labels are for evaluation only. They should NOT be hardcoded as business logic.
+
+### `financial_profiles.csv`
+
+Contains the user's financial profile:
+- Home currency
+- Current available balance
+- Minimum balance to keep
+- Financial priorities
+- Protected categories
+- Categories the user is willing to reduce
+- Categories the user is willing to stop
+- Accepted payment methods
+- Maximum installment duration
+
+### `financial_events.csv`
+
+Contains financial transactions/events:
+- Income
+- Expenses
+- Pending transactions
+- Scheduled transactions
+- Settled transactions
+- Cancellations
+- etc.
+
+Important fields include:
+- `event_type`
+- `description`
+- `category`
+- `direction`
+- `amount`
+- `currency`
+- `event_date`
+- `settlement_date`
+- `status`
+- `flexibility`
+- `minimum_allowed_amount`
+
+### `request_payment_options.csv`
+
+Contains available payment options for each request.
+
+Important fields:
+- Payment method
+- Payment amount
+- Number of payments
+- First payment date
+- Payment frequency
+- Financing fee
+- Total payable amount
+
+We must use the exact payment options provided by the dataset.
+
+### `exchange_rates.csv`
+
+Contains historical exchange rates.
+
+There is no live FX system.
+
+### `messages.csv`
+
+Contains messages associated with users, requests, and financial events.
+
+Messages can contain important information such as:
+- Cancellations
+- Delays
+- Adjustments
+- Confirmations
+
+### `images.csv`
+
+Contains image metadata and relationships between images and requests/events.
+
+Actual image files are under:
+
+`media/images/`
+
+---
+
+## Important financial rules understood during Phase 1
+
+1. Every payment must be possible on the requested date.
+2. The user's `minimum_balance_to_keep` must be preserved.
+3. Protected expenses/categories must not be sacrificed.
+4. Pending transactions must be treated as reserved.
+5. Only confirmed future income should count.
+6. Do not assume bonuses, refunds, commissions, investment gains, etc. unless confirmed by the dataset.
+7. The requested amount must be completed before the desired completion date.
+8. Use a 90-day forecast/simulation.
+9. Only use payment methods accepted by the user.
+10. Installment duration cannot exceed `max_installment_months`.
+11. Installment plans must match the exact dataset payment option.
+12. Flexible spending can only be changed when both the financial event and user profile allow it.
+13. Reducible expenses cannot go below `minimum_allowed_amount`.
+14. Pending transactions are reserved, not available cash.
+15. `missing != zero`.
+16. `missing != false`.
+17. Never guess missing financial information.
+
+---
+
+## Conflict resolution hierarchy
+
+When information conflicts:
+
+1. Explicit cancellation / settlement / amendment
+2. Newer record from the same source
+3. Settled event over estimate/forecast
+4. Financially safer interpretation when ambiguity remains
+
+---
+
+# Phase 2 — Design `schemas.py`
+
+## Goal
+
+The second phase was creating Pydantic schemas that act as validated contracts for the domain data loaded by `data_loader.py`.
+
+The main idea:
+
+`data_loader.py` loads and structures the data.
+
+`schemas.py` validates the structure and types.
+
+The schemas do NOT perform financial decisions.
+
+---
+
+## Pydantic configuration
+
+The base schema uses:
+
+```python
+ConfigDict(
+    from_attributes=True,
+    extra="forbid"
+)
+```
+
+### `from_attributes=True`
+
+Allows Pydantic to validate Python dataclass objects directly.
+
+For example:
+
+```python
+ProfileSchema.model_validate(profile, from_attributes=True)
+```
+
+### `extra="forbid"`
+
+Rejects unexpected fields.
+
+This helps catch:
+- Schema drift
+- Typos
+- Unexpected fields
+- Incorrect data contracts
+
+---
+
+## Main schemas
+
+The project contains schemas for:
+
+- `ProfileSchema`
+- `FinancialEventSchema`
+- `PaymentOptionSchema`
+- `MessageSchema`
+- `ImageRecordSchema`
+- `RequestSchema`
+- `SampleRequestSchema`
+
+Important principle:
+
+Missing financial values remain `None`.
+
+We do NOT silently convert:
+
+```text
+None → 0
+```
+
+because:
+
+**missing data is not the same as zero.**
+
+---
+
+## Important architecture decision
+
+`RequestSchema` does not contain the entire financial event history.
+
+Instead, financial events are accessed through the user's ID and the indexes created by the loader.
+
+This keeps the request object from becoming unnecessarily huge and keeps responsibilities separated.
+
+---
+
+# Phase 3 — Build the LLM Extraction Layer
+
+## Goal
+
+The third phase is the natural-language understanding layer.
+
+The user may say:
+
+> "I want to buy a laptop for $2,000 and I can pay half now."
+
+The LLM understands this naturally, but we don't want the LLM to return arbitrary text.
+
+Instead, we define an **Extraction Contract**.
+
+The LLM extracts structured facts such as:
+
+```python
+{
+    "item": "laptop",
+    "amount": 2000,
+    "currency": "USD",
+    "partial_payment_intent": True
+}
+```
+
+The important point is:
+
+**Extraction is NOT decision-making.**
+
+---
+
+## `extraction_schema.py`
+
+A separate extraction schema was created instead of mixing extraction fields with the domain schemas.
+
+The main extraction model is:
+
+```python
+RequestExtraction
+```
+
+It can contain information such as:
+
+- `item`
+- `amount`
+- `currency`
+- `partial_payment_intent`
+- `mentioned_dates`
+- `future_income_mentions`
+- `spending_change_mentions`
+
+---
+
+## What the LLM is allowed to do
+
+The LLM may:
+
+- Understand user language
+- Extract explicitly stated facts
+- Extract amounts
+- Extract currencies
+- Extract dates or date expressions
+- Detect whether the user mentioned partial payment
+- Extract mentioned future income
+- Extract spending-change statements
+
+---
+
+## What the LLM must NOT do
+
+The LLM must NOT:
+
+- Calculate affordability
+- Calculate `amount_safe_to_pay`
+- Forecast the balance
+- Decide whether to buy
+- Decide whether to wait
+- Recommend a payment plan
+- Rank payment plans
+- Calculate financial risk
+- Make the final financial decision
+
+Those responsibilities belong to deterministic Python code.
+
+---
+
+# Evidence / Provenance
+
+The extraction schema includes:
+
+```python
+Evidence
+```
+
+The purpose is to know where an extracted fact came from.
+
+Possible sources include:
+
+```text
+request
+message
+image
+```
+
+For example:
+
+```python
+Evidence(
+    source_type="message",
+    request_id="req_001",
+    message_id="msg_123"
+)
+```
+
+means the extracted information came from a specific message.
+
+This gives us traceability:
+
+**"Where did this extracted fact come from?"**
+
+This is especially important for a financial system.
+
+---
+
+# MentionedDate
+
+The extraction layer separates what the user actually said from deterministic date interpretation.
+
+For example:
+
+> "I want to buy it next month."
+
+The LLM can extract:
+
+```python
+raw_expression = "next month"
+```
+
+Instead of guessing an exact date.
+
+If the user says:
+
+> "September 25"
+
+then an exact date can be represented when it is explicitly known.
+
+This prevents the LLM from inventing dates.
+
+---
+
+# FutureIncomeMention
+
+If the user says:
+
+> "I will receive a bonus of $1,000 next month."
+
+The extraction layer can record:
+
+```text
+description = bonus
+amount = 1000
+currency = USD
+```
+
+But this does NOT mean the system considers the bonus confirmed cash.
+
+The deterministic financial engine must later decide whether that income is actually confirmed and usable according to the dataset rules.
+
+---
+
+# SpendingChangeMention
+
+If the user says:
+
+> "I can reduce my restaurant spending."
+
+The extraction layer records that the user mentioned a possible spending change.
+
+It does NOT mean the LLM is recommending the change.
+
+Python later determines whether reducing that expense is actually allowed and financially useful.
+
+---
+
+# Extraction Tests
+
+A separate:
+
+`test_extraction_schema.py`
+
+was created.
+
+These tests verify the **Extraction Contract**, not the LLM's intelligence.
+
+For example, the tests check:
+
+- Valid extraction objects are accepted
+- `Decimal` values are preserved
+- Missing values remain `None`
+- `partial_payment_intent` supports `True`, `False`, and `None`
+- Evidence requires the appropriate source ID
+- Nested evidence works
+- Unexpected decision fields are rejected
+- Invalid monetary values are rejected
+
+One particularly important test verifies that a field such as:
+
+```python
+affordability_status
+```
+
+is rejected.
+
+Why?
+
+Because affordability is a financial decision, not an extraction result.
+
+---
+
+# Phase 4 — 90-Day Financial Simulator
+
+This is the phase I have now completed.
+
+The goal is to build the deterministic financial engine that evaluates the user's cash flow over 90 days.
+
+The key principle is:
+
+**The LLM describes. Python decides.**
+
+The simulator uses the structured dataset and validated information to calculate the user's financial situation over time.
+
+---
+
+## Main architecture
+
+The current planned architecture is:
+
+```text
+DataLoader
+    ↓
+Evidence / Image / Message Processing
+    ↓
+Event Classification & Recurrence
+    ↓
+90-Day Cash Flow Timeline
+    ↓
+Safety & Metrics Evaluation
+    ↓
+Plan Generation
+    ↓
+Decision
+```
+
+The 90-day simulation itself is based on:
+
+```text
+Balance(t)
+=
+Balance(t-1)
++
+Inflows(t)
+-
+Outflows(t)
+```
+
+The critical safety rule is:
+
+```text
+Balance(t) >= minimum_balance_to_keep
+```
+
+for the required simulation period.
+
+---
+
+## Evidence & Image Ingestion
+
+Financial events may have missing amounts.
+
+If an event has a missing amount and there is a related image, the system can use the image evidence to resolve the exact amount.
+
+Messages can also provide important financial context such as:
+
+- Cancellation
+- Date changes
+- Confirmed adjustments
+- Settlement information
+
+The conflict-resolution hierarchy from Phase 1 is applied here.
+
+---
+
+## Currency Conversion
+
+Financial events may use different currencies.
+
+The simulator converts them to the user's `home_currency` using the dataset's:
+
+`exchange_rates.csv`
+
+The rate is matched using:
+
+```text
+rate_date
+from_currency
+to_currency
+```
+
+There is no live exchange-rate dependency.
+
+---
+
+## Cash Flow Classification
+
+Important distinction:
+
+### Pending / scheduled debits
+
+They are treated as reserved obligations.
+
+### Pending credits
+
+They are not treated as available cash.
+
+### Confirmed scheduled salary
+
+It can be included on its settlement date.
+
+### Unconfirmed future income
+
+It should not automatically be treated as available cash.
+
+This follows the conservative financial rules established earlier.
+
+---
+
+# Recurrence / Future Projection
+
+The simulator needs to identify recurring financial events such as:
+
+- Rent
+- Utilities
+- Subscriptions
+- Loan payments
+- Salary
+
+Historical cadence can be used to project recurring occurrences across the 90-day window.
+
+---
+
+# `amount_safe_to_pay`
+
+One of the most important outputs is:
+
+```text
+amount_safe_to_pay
+```
+
+Conceptually, it answers:
+
+> "How much can the user safely pay while still maintaining the required minimum balance throughout the simulation?"
+
+The value is bounded by:
+
+```text
+0
+≤
+amount_safe_to_pay
+≤
+requested_amount
+```
+
+The simulator checks the user's projected balance across the 90-day period and finds the amount that can be paid without violating the minimum-balance rule.
+
+---
+
+# `earliest_date_for_full_payment`
+
+Another important output is:
+
+```text
+earliest_date_for_full_payment
+```
+
+The simulator tests possible future dates.
+
+For each candidate date, it asks:
+
+> "If the user pays the full requested amount on this date, does the balance remain safe afterward?"
+
+The first safe date becomes the earliest safe payment date.
+
+If the request is affordable immediately, the date can be the request date.
+
+If no safe date exists within the required 90-day horizon, the value remains empty.
+
+---
+
+# Important Separation
+
+At this point, the architecture is intentionally separated into:
+
+```text
+LLM
+ ↓
+Extract facts
+ ↓
+Pydantic
+ ↓
+Validate structure
+ ↓
+Financial Simulator
+ ↓
+Calculate cash flow
+ ↓
+Later: Plan Generator
+ ↓
+Later: Validator
+ ↓
+Final Decision
+```
+
+The LLM is NOT responsible for the financial mathematics.
+
+The deterministic Python engine is responsible for the financial calculations.
+
+---
+
+# Current Status
+
+Completed:
+
+- Phase 1 — Dataset understanding + `data_loader.py`
+- Phase 2 — `schemas.py`
+- Phase 3 — LLM extraction contract/schema + extraction tests
+- Phase 4 — 90-day financial simulation architecture/engine
+
+Next phase:
+
+**Phase 5 — Plan Generation + Ranking**
+
+This phase should generate and compare possible payment strategies based on the outputs of the 90-day simulator.
+
+Do NOT skip directly to later phases.
+
+I want to continue step-by-step and understand the next phase before implementing it.
