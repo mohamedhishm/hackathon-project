@@ -102,3 +102,32 @@ branch=dev-Etsh-work
 repo_root=C:\Users\msi\OneDrive - Arab Academy for Science and Technology\Documents\AI Engineer\Hackerrank hackathon\project\hackerrank-orchestrate-september26
 worktree=C:\Users\msi\OneDrive - Arab Academy for Science and Technology\Documents\AI Engineer\Hackerrank hackathon\project\hackerrank-orchestrate-september26
 parent_agent=none
+## [2026-09-12T23:27:57.184Z] SESSION START
+
+tool=Cursor
+Repo Root: C:\Users\msi\OneDrive - Arab Academy for Science and Technology\Documents\AI Engineer\Hackerrank hackathon\project\hackerrank-orchestrate-september26
+Branch: dev-Etsh-work
+Worktree: C:\Users\msi\OneDrive - Arab Academy for Science and Technology\Documents\AI Engineer\Hackerrank hackathon\project\hackerrank-orchestrate-september26
+Parent Agent: none
+Language: py
+Time Remaining: 0d 13h 2m
+
+## [2026-09-12T23:27:57.184Z] Add Phase 3 extraction schema contract
+
+User Prompt (verbatim, secrets redacted):
+Create the foundation for the LLM Extraction Layer. Focus on the extraction contract/schema first for request_text, messages, and images. Let the LLM describe, let deterministic code decide. Do not call Groq, do not implement simulation/affordability/ranking. Inspect schemas.py, data_loader.py, test_schema.py first. Create extraction schema + focused tests.
+
+Agent Response Summary:
+Inspected Phase 1/2 contracts and added a separate Pydantic v2 extraction schema so language-derived facts stay distinct from dataset domain objects. RequestExtraction stores item, amount, currency, partial_payment_intent, date mentions, future-income mentions, and spending-change mentions with per-fact Evidence. Missing values stay None; extra decision fields are forbidden. Tests passed. No Groq client was added. data_loader.py and schemas.py were not modified.
+
+Actions:
+* Created code/extraction_schema.py
+* Created code/test_extraction_schema.py
+* Ran py -3 test_extraction_schema.py
+
+Context:
+tool=Cursor
+branch=dev-Etsh-work
+repo_root=C:\Users\msi\OneDrive - Arab Academy for Science and Technology\Documents\AI Engineer\Hackerrank hackathon\project\hackerrank-orchestrate-september26
+worktree=C:\Users\msi\OneDrive - Arab Academy for Science and Technology\Documents\AI Engineer\Hackerrank hackathon\project\hackerrank-orchestrate-september26
+parent_agent=none
